@@ -100,7 +100,7 @@ ROOT_FS=$(findmnt -n -o FSTYPE --target /)
 [[ "$ROOT_FS" == "ext4" ]] || fail "Unsupported root filesystem: $ROOT_FS (expected ext4)"
 
 ROOT_UUID=$(findmnt -n -o UUID --target /)
-[[ "$ROOT_UUID" =~ ^[a-fA-F0-9-]{36}$ ]] || fail "Unable to determine a valid root filesystem UUID"
+[[ "$ROOT_UUID" =~ ^[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}$ ]] || fail "Unable to determine a valid root filesystem UUID"
 
 # cmdline.txt contains shared boot parameters only; root= is generated here.
 mkdir -p -- "$BUILD_DIR"
@@ -124,11 +124,11 @@ if not tokens or any(token.startswith('root=') for token in tokens):
     sys.exit('ERROR: cmdline.txt must contain boot options but no root= parameter')
 if not all(token in tokens for token in required):
     sys.exit('ERROR: Kernel command line is missing required Intel boot parameters')
-if any(ch in config for ch in '\\r\\n\\x00'):
+if any(ch in config for ch in '\r\n\x00'):
     sys.exit('ERROR: cmdline.txt must contain a single line')
 
 Path(sys.argv[2]).write_text(
-    f'root=UUID={sys.argv[3]} {config}\\n'
+    f'root=UUID={sys.argv[3]} {config}\n'
 )
 PY
 
@@ -144,7 +144,9 @@ flock -x 9 || fail "Unable to acquire build lock"
 INPUT_SHA=$(
     {
         printf '%s\n' "$KERNEL_VERSION"
-        sha256sum "$SOURCE" "$GENERATED_CMDLINE" "$KERNEL" "$INITRD"
+        for input_file in "$SOURCE" "$GENERATED_CMDLINE" "$KERNEL" "$INITRD"; do
+            sha256sum "$input_file" | cut -d' ' -f1
+        done
         gcc --version | head -n 1
         ld --version | head -n 1
         ukify --version
