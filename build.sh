@@ -34,19 +34,48 @@ cleanup() {
 trap cleanup EXIT
 
 usage() {
-    printf 'Usage: sudo %s <installed-kernel-version>\n' "${0##*/}" >&2
-    printf 'Example: sudo %s 7.0.0-42-generic\n' "${0##*/}" >&2
+    printf 'Usage: sudo %s [installed-kernel-version]\n' "${0##*/}" >&2
+    printf 'Without an argument, the newest installed kernel with an initramfs is selected.\n' >&2
     exit 2
+}
+
+# -----------------------------------------------------------------------------
+# Kernel selection
+# -----------------------------------------------------------------------------
+
+select_kernel() {
+    local kernel version
+    local -a versions=()
+
+    # Use installed /boot artifacts, not the currently running kernel.
+    # Only kernels with a matching, nonempty initramfs are eligible.
+    for kernel in /boot/vmlinuz-*; do
+        [[ -f "$kernel" && -s "$kernel" ]] || continue
+        version=${kernel##*/vmlinuz-}
+        [[ "$version" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || continue
+        [[ -f "/boot/initrd.img-$version" && -s "/boot/initrd.img-$version" ]] || continue
+        versions+=("$version")
+    done
+
+    ((${#versions[@]} > 0)) || fail "No installed kernel with a matching initramfs was found in /boot"
+    printf '%s\n' "${versions[@]}" | LC_ALL=C sort -V | tail -n 1
 }
 
 # -----------------------------------------------------------------------------
 # Input validation
 # -----------------------------------------------------------------------------
 
-[[ $# -eq 1 ]] || usage
-KERNEL_VERSION=$1
-[[ "$KERNEL_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || fail "Invalid kernel version"
+[[ $# -le 1 ]] || usage
 [[ $(id -u) -eq 0 ]] || fail "Run with sudo to read the initramfs"
+
+if [[ $# -eq 1 ]]; then
+    KERNEL_VERSION=$1
+    [[ "$KERNEL_VERSION" =~ ^[A-Za-z0-9][A-Za-z0-9._+-]*$ ]] || fail "Invalid kernel version"
+else
+    command -v sort >/dev/null 2>&1 || fail "Missing command: sort"
+    KERNEL_VERSION=$(select_kernel)
+    info "Automatically selected installed kernel: $KERNEL_VERSION"
+fi
 
 for tool in gcc ld nm objcopy ukify python3 sha256sum flock cmp file; do
     command -v "$tool" >/dev/null 2>&1 || fail "Missing command: $tool"
