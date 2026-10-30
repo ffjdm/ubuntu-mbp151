@@ -77,7 +77,7 @@ else
     info "Automatically selected installed kernel: $KERNEL_VERSION"
 fi
 
-for tool in gcc ld nm objcopy ukify python3 sha256sum flock cmp file; do
+for tool in gcc ld nm objcopy ukify python3 sha256sum flock cmp file findmnt; do
     command -v "$tool" >/dev/null 2>&1 || fail "Missing command: $tool"
 done
 
@@ -90,19 +90,46 @@ INITRD="/boot/initrd.img-$KERNEL_VERSION"
 [[ -f /usr/lib/elf_x86_64_efi.lds && -f /usr/lib/crt0-efi-x86_64.o ]] || fail "Missing GNU-EFI development files"
 [[ -f /usr/include/efi/efi.h ]] || fail "Missing GNU-EFI headers"
 
-# Do not allow a kernel command line that differs from the known-good design.
-python3 - "$CMDLINE" <<'PY'
+# -----------------------------------------------------------------------------
+# Root filesystem and kernel command line
+# -----------------------------------------------------------------------------
+
+# Only support a directly mounted ext4 root filesystem for this MBP setup.
+# More complex roots (LUKS, LVM, Btrfs subvolumes) need separate handling.
+ROOT_FS=$(findmnt -n -o FSTYPE --target /)
+[[ "$ROOT_FS" == "ext4" ]] || fail "Unsupported root filesystem: $ROOT_FS (expected ext4)"
+
+ROOT_UUID=$(findmnt -n -o UUID --target /)
+[[ "$ROOT_UUID" =~ ^[a-fA-F0-9-]{36}$ ]] || fail "Unable to determine a valid root filesystem UUID"
+
+# cmdline.txt contains shared boot parameters only; root= is generated here.
+mkdir -p -- "$BUILD_DIR"
+TEMP=$(mktemp -d -p "$BUILD_DIR" .build-tmp.XXXXXXXX) || fail "Unable to create temporary directory"
+GENERATED_CMDLINE="$TEMP/cmdline.txt"
+
+python3 - "$CMDLINE" "$GENERATED_CMDLINE" "$ROOT_UUID" <<'PY'
 from pathlib import Path
 import sys
-cmd = Path(sys.argv[1]).read_text().strip()
+
+config = Path(sys.argv[1]).read_text().strip()
+tokens = config.split()
 required = (
+    'ro',
     'intel_iommu=off',
     'modprobe.blacklist=amdgpu,radeon',
     'rd.driver.blacklist=amdgpu,radeon',
     'initcall_blacklist=simpledrm_platform_driver_init,efifb_driver_init',
 )
-if '\n' in cmd or not cmd.startswith('root=UUID=') or not all(x in cmd.split() for x in required):
+if not tokens or any(token.startswith('root=') for token in tokens):
+    sys.exit('ERROR: cmdline.txt must contain boot options but no root= parameter')
+if not all(token in tokens for token in required):
     sys.exit('ERROR: Kernel command line is missing required Intel boot parameters')
+if any(ch in config for ch in '\\r\\n\\x00'):
+    sys.exit('ERROR: cmdline.txt must contain a single line')
+
+Path(sys.argv[2]).write_text(
+    f'root=UUID={sys.argv[3]} {config}\\n'
+)
 PY
 
 mkdir -p -- "$BUILD_DIR"
@@ -117,7 +144,7 @@ flock -x 9 || fail "Unable to acquire build lock"
 INPUT_SHA=$(
     {
         printf '%s\n' "$KERNEL_VERSION"
-        sha256sum "$SOURCE" "$CMDLINE" "$KERNEL" "$INITRD"
+        sha256sum "$SOURCE" "$GENERATED_CMDLINE" "$KERNEL" "$INITRD"
         gcc --version | head -n 1
         ld --version | head -n 1
         ukify --version
@@ -142,7 +169,6 @@ fi
 # Prepare a candidate-specific source in an isolated working directory
 # -----------------------------------------------------------------------------
 
-TEMP=$(mktemp -d -p "$BUILD_DIR" .build-tmp.XXXXXXXX) || fail "Unable to create temporary directory"
 mkdir -- "$TEMP/out"
 
 python3 - "$SOURCE" "$TEMP/intel-gmux-candidate.c" <<'PY'
@@ -192,20 +218,20 @@ objcopy -j .text -j .data -j .rodata -j .dynamic -j .dynsym -j .dynstr \
 
 info "Building UKI for kernel $KERNEL_VERSION..."
 ukify build --linux="$KERNEL" --initrd="$INITRD" \
-    --cmdline="@$CMDLINE" --output="$TEMP/out/$UKI_NAME"
+    --cmdline="@$GENERATED_CMDLINE" --output="$TEMP/out/$UKI_NAME"
 
 [[ -s "$TEMP/out/$HELPER_NAME" && -s "$TEMP/out/$UKI_NAME" ]] || fail "Missing build outputs"
 file "$TEMP/out/$HELPER_NAME" "$TEMP/out/$UKI_NAME"
 
-# Check that the embedded command line matches the versioned input exactly.
+# Verify the embedded command line against the generated input.
 objcopy --dump-section ".cmdline=$TEMP/embedded-cmdline" "$TEMP/out/$UKI_NAME" >/dev/null
-python3 - "$CMDLINE" "$TEMP/embedded-cmdline" <<'PY'
+python3 - "$GENERATED_CMDLINE" "$TEMP/embedded-cmdline" <<'PY'
 from pathlib import Path
 import sys
 expected = Path(sys.argv[1]).read_bytes().rstrip(b'\x00\r\n')
 actual = Path(sys.argv[2]).read_bytes().rstrip(b'\x00\r\n')
 if actual != expected:
-    sys.exit('ERROR: Embedded UKI command line differs from cmdline.txt')
+    sys.exit('ERROR: Embedded UKI command line differs from generated command line')
 PY
 
 # -----------------------------------------------------------------------------

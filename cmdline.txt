@@ -1,1 +1,1 @@
-root=UUID=daaeb25e-8ed9-4d21-b9ff-bbb760d51b6c ro intel_iommu=off modprobe.blacklist=amdgpu,radeon rd.driver.blacklist=amdgpu,radeon initcall_blacklist=simpledrm_platform_driver_init,efifb_driver_init
+ro intel_iommu=off modprobe.blacklist=amdgpu,radeon rd.driver.blacklist=amdgpu,radeon initcall_blacklist=simpledrm_platform_driver_init,efifb_driver_init
