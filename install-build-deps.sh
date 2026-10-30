@@ -2,8 +2,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ $EUID -ne 0 ]]; then
-    echo "Lance ce script avec sudo." >&2
+if [ "$(id -u)" -ne 0 ]; then
+    echo "Run with sudo." >&2
     exit 1
 fi
 
@@ -26,4 +26,4 @@ for tool in gcc ld objcopy nm ukify python3 file efibootmgr update-initramfs; do
 done
 
 echo
-echo "Environnement de compilation prêt."
+echo "Build environment ready."
