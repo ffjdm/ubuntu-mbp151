@@ -219,14 +219,15 @@ objcopy -j .text -j .data -j .rodata -j .dynamic -j .dynsym -j .dynstr \
 # -----------------------------------------------------------------------------
 
 info "Building UKI for kernel $KERNEL_VERSION..."
-ukify build --linux="$KERNEL" --initrd="$INITRD" \
+ukify build --uname="$KERNEL_VERSION" --linux="$KERNEL" --initrd="$INITRD" \
     --cmdline="@$GENERATED_CMDLINE" --output="$TEMP/out/$UKI_NAME"
 
 [[ -s "$TEMP/out/$HELPER_NAME" && -s "$TEMP/out/$UKI_NAME" ]] || fail "Missing build outputs"
 file "$TEMP/out/$HELPER_NAME" "$TEMP/out/$UKI_NAME"
 
 # Verify the embedded command line against the generated input.
-objcopy --dump-section ".cmdline=$TEMP/embedded-cmdline" "$TEMP/out/$UKI_NAME" >/dev/null
+cp -- "$TEMP/out/$UKI_NAME" "$TEMP/uki-for-inspection.efi"
+objcopy --dump-section ".cmdline=$TEMP/embedded-cmdline" "$TEMP/uki-for-inspection.efi" >/dev/null
 python3 - "$GENERATED_CMDLINE" "$TEMP/embedded-cmdline" <<'PY'
 from pathlib import Path
 import sys
