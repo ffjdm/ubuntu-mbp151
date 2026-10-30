@@ -1,0 +1,59 @@
+--- a/intel-before-linux.c
++++ b/intel-before-linux.c
+@@ -27,7 +27,7 @@
+     while (line[size]) ++size;
+     if (!log_root) return;
+     EFI_STATUS s = uefi_call_wrapper(log_root->Open, 5, log_root, &file,
+-        L"\\EFI\\Omarchy\\intel-before-linux.log",
++        L"\\EFI\\custom\\intel-before-no-ghost.log",
+         EFI_FILE_MODE_READ | EFI_FILE_MODE_WRITE | EFI_FILE_MODE_CREATE, 0);
+     if (EFI_ERROR(s)) return;
+     s = uefi_call_wrapper(file->SetPosition, 2, file, (UINT64)-1);
+@@ -179,7 +179,7 @@
+ 
+ EFI_STATUS efi_main(EFI_HANDLE image, EFI_SYSTEM_TABLE *systab) {
+     EFI_STATUS status;
+-    EFI_LOADED_IMAGE *self = NULL, *child = NULL;
++    EFI_LOADED_IMAGE *self = NULL;
+     EFI_HANDLE child_handle = NULL;
+     EFI_DEVICE_PATH *path = NULL;
+     APPLE_SET_OS *apple = NULL;
+@@ -198,26 +198,15 @@
+     if (EFI_ERROR(status)) goto failure;
+     status = uefi_call_wrapper(fs->OpenVolume, 2, fs, &log_root);
+     if (EFI_ERROR(status)) goto failure;
+-    checkpoint("\r\nSTART default helper (Intel four lanes; maintained Omarchy UKI)\r\n");
++    checkpoint("\r\nSTART Ubuntu Intel test (four lanes)\r\n");
+     if (!correct_model()) { status = EFI_UNSUPPORTED; goto failure; }
+     checkpoint("SMBIOS model verified\r\n");
+-    if (!self->LoadOptions || self->LoadOptionsSize < 4 || self->LoadOptionsSize > 32768 ||
+-        self->LoadOptionsSize % sizeof(CHAR16) ||
+-        ((CHAR16 *)self->LoadOptions)[self->LoadOptionsSize / sizeof(CHAR16) - 1]) {
+-        status = EFI_INVALID_PARAMETER; goto failure;
+-    }
+     /* Resolve and load Linux before touching the display mux. */
+-    path = FileDevicePath(self->DeviceHandle, L"\\EFI\\Linux\\omarchy_linux-omarchy.efi");
++    path = FileDevicePath(self->DeviceHandle, L"\\EFI\\custom\\ubuntu-intel-no-ghost.efi");
+     if (!path) { status = EFI_OUT_OF_RESOURCES; goto failure; }
+     status = uefi_call_wrapper(BS->LoadImage, 6, FALSE, image, path, NULL, 0, &child_handle);
+     if (EFI_ERROR(status)) goto failure;
+     checkpoint("Linux UKI loaded\r\n");
+-    status = uefi_call_wrapper(BS->HandleProtocol, 3, child_handle, &LoadedImageProtocol, (VOID **)&child);
+-    if (EFI_ERROR(status)) goto failure;
+-    child->LoadOptions = AllocatePool(self->LoadOptionsSize);
+-    if (!child->LoadOptions) { status = EFI_OUT_OF_RESOURCES; goto failure; }
+-    CopyMem(child->LoadOptions, self->LoadOptions, self->LoadOptionsSize);
+-    child->LoadOptionsSize = self->LoadOptionsSize;
+     status = uefi_call_wrapper(BS->LocateProtocol, 3, &apple_guid, NULL, (VOID **)&apple);
+     if (EFI_ERROR(status) || !apple || !apple->set_os_version) goto failure;
+     status = uefi_call_wrapper(apple->set_os_version, 1, (CHAR8 *)"Mac OS X 10.9");
+@@ -293,8 +282,7 @@
+         checkpoint(restored_ddc && restored_display ?
+             "Original mux selections restored\r\n" : "WARNING: mux restoration failed\r\n");
+     }
+-    Print(L"Helper returned: %r. See EFI/Omarchy/intel-before-linux.log.\r\n", status);
+-    if (child && child->LoadOptions) { FreePool(child->LoadOptions); child->LoadOptions = NULL; }
++    Print(L"Helper returned: %r. See EFI/custom/intel-before-no-ghost.log.\r\n", status);
+     if (child_handle) uefi_call_wrapper(BS->UnloadImage, 1, child_handle);
+     if (path) FreePool(path);
+     if (log_root) uefi_call_wrapper(log_root->Close, 1, log_root);
