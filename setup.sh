@@ -129,15 +129,22 @@ actual_commit=$(git -C "$TEMP_DIR/upstream" rev-parse HEAD)
 [[ -f "$TEMP_DIR/upstream/$UPSTREAM_SOURCE" ]] || fail "Missing upstream source: $UPSTREAM_SOURCE"
 
 mkdir -- "$TEMP_DIR/prepared"
-cp -- "$TEMP_DIR/upstream/$UPSTREAM_SOURCE" "$TEMP_DIR/prepared/intel-gmux.c"
+
+cp -- "$TEMP_DIR/upstream/$UPSTREAM_SOURCE" \
+      "$TEMP_DIR/prepared/$UPSTREAM_SOURCE"
 
 info "Applying Ubuntu patch..."
+
 (
     cd "$TEMP_DIR/prepared"
     patch --batch --fuzz=0 --forward -p1 < "$PATCH_FILE"
 ) || fail "Patch does not apply cleanly"
 
-[[ -s "$TEMP_DIR/prepared/intel-gmux.c" ]] || fail "Patched source is empty"
+mv -- "$TEMP_DIR/prepared/$UPSTREAM_SOURCE" \
+      "$TEMP_DIR/prepared/intel-gmux.c"
+
+[[ -s "$TEMP_DIR/prepared/intel-gmux.c" ]] \
+    || fail "Patched source is empty"
 
 SOURCE_SHA=$(sha256sum "$TEMP_DIR/prepared/intel-gmux.c")
 SOURCE_SHA=${SOURCE_SHA%% *}
