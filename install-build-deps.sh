@@ -7,6 +7,13 @@ if [ "$(id -u)" -ne 0 ]; then
     exit 1
 fi
 
+# Check before modifying installed packages.
+if ! command -v dracut >/dev/null 2>&1; then
+    echo "ERROR: dracut is required." >&2
+    echo "Install/configure dracut separately before continuing." >&2
+    exit 1
+fi
+
 apt-get update
 
 apt-get install -y \
@@ -16,12 +23,12 @@ apt-get install -y \
     systemd-ukify \
     python3 \
     file \
-    efibootmgr \
-    initramfs-tools
+    efibootmgr
 
 echo
-echo "=== Outils disponibles ==="
-for tool in gcc ld objcopy nm ukify python3 file efibootmgr update-initramfs; do
+echo "=== Build tools ==="
+
+for tool in gcc ld objcopy nm ukify python3 file efibootmgr dracut; do
     command -v "$tool"
 done
 
